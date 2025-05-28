@@ -1,23 +1,23 @@
 using Microsoft.EntityFrameworkCore;
-using userauth.Models; // Changed from userauth.Models to userauth.Models as per original project name
+using userauth.Models;
 
-namespace userauth.Data // Changed namespace to userauth.Data
+namespace userauth.Data
 {
-    public class ApplicationDbContext : IdentityDbContext<User>
+    public class AppDbContext : DbContext
     {
-        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-            : base(options)
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+        public DbSet<User> Users { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-        }
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.Email)
+                .IsUnique();
 
-        protected override void OnModelCreating(ModelBuilder builder)
-        {
-            base.OnModelCreating(builder);
-
-            // Configure the IdentityUser table name if you want a different one than AspNetUsers
-            // builder.Entity<User>().ToTable("Users");
-
-            // You can add more model configurations here if needed
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.Username)
+                .IsUnique();
         }
     }
 }

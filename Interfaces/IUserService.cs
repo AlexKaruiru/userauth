@@ -1,16 +1,17 @@
 using userauth.DTOs;
-using Microsoft.AspNetCore.Identity;
+using userauth.Models;
 
 namespace userauth.Interfaces
 {
     public interface IUserService
     {
-        Task<IdentityResult> RegisterUserAsync(UserRegisterDto registerDto);
-        Task<string> LoginUserAsync(UserLoginDto loginDto); // Returns JWT token
-        Task<UserProfileDto> GetUserProfileAsync(string userId);
-        Task<IdentityResult> UpdateUserProfileAsync(string userId, UserUpdateProfileDto updateDto);
-        Task<IdentityResult> DeleteUserAsync(string userId);
-        Task<IEnumerable<UserProfileDto>> GetAllUsersAsync(); // For admin purposes
-        Task<IdentityResult> UpdateUserRoleAsync(string userId, bool isAdmin); // For admin purposes
+        Task<User> Register(RegisterDto registerDto);
+        Task<string> Login(LoginDto loginDto);
+        Task<UserProfileDto> GetUserProfile(int userId);
+        Task<UserProfileDto> UpdateUserProfile(int userId, UserUpdateDto updateDto);
+        Task<UserProfileDto> AdminUpdateUser(int adminId, int userId, AdminUserUpdateDto updateDto);
+        Task<List<UserProfileDto>> GetAllUsers(int adminId);
+        Task<UserProfileDto> GetUserById(int requestingUserId, int userId);
+        Task<bool> DeleteUser(int requestingUserId, int userId);
     }
 }

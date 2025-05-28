@@ -1,180 +1,291 @@
-using AutoMapper;
-using Microsoft.AspNetCore.Identity;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
-using userauth.DTOs; 
-using userauth.Interfaces; 
-using userauth.Models; 
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using userauth.Data;
+using userauth.DTOs;
+using userauth.Interfaces;
+using userauth.Models;
 
-namespace userauth.Services 
+namespace userauth.Services
 {
     public class UserService : IUserService
     {
-        private readonly UserManager<User> _userManager;
-        private readonly SignInManager<User> _signInManager;
+        private readonly AppDbContext _context;
         private readonly IConfiguration _configuration;
-        private readonly IMapper _mapper;
 
-        public UserService(
-            UserManager<User> userManager,
-            SignInManager<User> signInManager,
-            IConfiguration configuration,
-            IMapper mapper)
+        public UserService(AppDbContext context, IConfiguration configuration)
         {
-            _userManager = userManager;
-            _signInManager = signInManager;
+            _context = context;
             _configuration = configuration;
-            _mapper = mapper;
         }
 
-        public async Task<IdentityResult> RegisterUserAsync(UserRegisterDto registerDto)
+        public async Task<User> Register(RegisterDto registerDto)
         {
-            var user = _mapper.Map<User>(registerDto);
-            user.UserName = registerDto.Email; // Set UserName to Email for login consistency
-            user.EmailConfirmed = true; // For simple registration, assume email is confirmed
-
-            var result = await _userManager.CreateAsync(user, registerDto.Password);
-
-            if (result.Succeeded)
+            // Check if email already exists
+            if (await _context.Users.AnyAsync(u => u.Email == registerDto.Email))
             {
-                // Assign a default role, e.g., "User"
-                await _userManager.AddToRoleAsync(user, "User");
-                if (user.IsAdmin)
-                {
-                    await _userManager.AddToRoleAsync(user, "Admin");
-                }
+                throw new Exception("Email already exists");
             }
-            return result;
+
+            CreatePasswordHash(registerDto.Password, out byte[] passwordHash, out byte[] passwordSalt);
+
+            var user = new User
+            {
+                Email = registerDto.Email,
+                FirstName = registerDto.FirstName,
+                LastName = registerDto.LastName,
+                Phone = registerDto.Phone,
+                Username = GenerateUsername(registerDto.FirstName, registerDto.LastName),
+                PasswordHash = passwordHash,
+                PasswordSalt = passwordSalt,
+                Role = "customer",
+                IsAdmin = false
+            };
+
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            return user;
         }
 
-        public async Task<string> LoginUserAsync(UserLoginDto loginDto)
+        public async Task<string> Login(LoginDto loginDto)
         {
-            var user = await _userManager.FindByEmailAsync(loginDto.Email);
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == loginDto.Email);
             if (user == null)
             {
-                return null; // User not found
+                throw new Exception("User not found");
             }
 
-            var result = await _signInManager.CheckPasswordSignInAsync(user, loginDto.Password, false);
-            if (!result.Succeeded)
+            if (!VerifyPasswordHash(loginDto.Password, user.PasswordHash, user.PasswordSalt))
             {
-                return null; // Invalid credentials
+                throw new Exception("Wrong password");
             }
 
-            return await GenerateJwtToken(user);
+            return CreateToken(user);
         }
 
-        public async Task<UserProfileDto> GetUserProfileAsync(string userId)
+        public async Task<UserProfileDto> GetUserProfile(int userId)
         {
-            var user = await _userManager.FindByIdAsync(userId);
+            var user = await _context.Users.FindAsync(userId);
             if (user == null)
             {
-                return null;
+                throw new Exception("User not found");
             }
-            return _mapper.Map<UserProfileDto>(user);
+
+            return new UserProfileDto
+            {
+                Username = user.Username,
+                Email = user.Email,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Phone = user.Phone,
+                Role = user.Role
+            };
         }
 
-        public async Task<IdentityResult> UpdateUserProfileAsync(string userId, UserUpdateProfileDto updateDto)
+        public async Task<UserProfileDto> UpdateUserProfile(int userId, UserUpdateDto updateDto)
         {
-            var user = await _userManager.FindByIdAsync(userId);
+            var user = await _context.Users.FindAsync(userId);
             if (user == null)
             {
-                return IdentityResult.Failed(new IdentityError { Description = "User not found." });
+                throw new Exception("User not found");
             }
 
-            // Update only the provided fields
             if (!string.IsNullOrEmpty(updateDto.FirstName))
             {
                 user.FirstName = updateDto.FirstName;
+                user.Username = GenerateUsername(updateDto.FirstName, user.LastName);
             }
+
             if (!string.IsNullOrEmpty(updateDto.LastName))
             {
                 user.LastName = updateDto.LastName;
+                user.Username = GenerateUsername(user.FirstName, updateDto.LastName);
             }
-            if (!string.IsNullOrEmpty(updateDto.PhoneNumber))
+
+            if (!string.IsNullOrEmpty(updateDto.Phone))
             {
-                user.PhoneNumber = updateDto.PhoneNumber;
+                user.Phone = updateDto.Phone;
             }
 
-            user.UpdatedAt = DateTime.UtcNow; // Update timestamp
-
-            return await _userManager.UpdateAsync(user);
-        }
-
-        public async Task<IdentityResult> DeleteUserAsync(string userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                return IdentityResult.Failed(new IdentityError { Description = "User not found." });
-            }
-            return await _userManager.DeleteAsync(user);
-        }
-
-        public async Task<IEnumerable<UserProfileDto>> GetAllUsersAsync()
-        {
-            var users = _userManager.Users.ToList(); // Get all users
-            return _mapper.Map<IEnumerable<UserProfileDto>>(users);
-        }
-
-        public async Task<IdentityResult> UpdateUserRoleAsync(string userId, bool isAdmin)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                return IdentityResult.Failed(new IdentityError { Description = "User not found." });
-            }
-
-            var currentRoles = await _userManager.GetRolesAsync(user);
-
-            if (isAdmin && !currentRoles.Contains("Admin"))
-            {
-                await _userManager.AddToRoleAsync(user, "Admin");
-            }
-            else if (!isAdmin && currentRoles.Contains("Admin"))
-            {
-                await _userManager.RemoveFromRoleAsync(user, "Admin");
-            }
-
-            user.IsAdmin = isAdmin; // Update custom IsAdmin property
             user.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
 
-            return await _userManager.UpdateAsync(user);
+            return await GetUserProfile(userId);
         }
 
+        public async Task<UserProfileDto> AdminUpdateUser(int adminId, int userId, AdminUserUpdateDto updateDto)
+        {
+            var admin = await _context.Users.FindAsync(adminId);
+            if (admin == null || !admin.IsAdmin)
+            {
+                throw new Exception("Unauthorized");
+            }
 
-        private async Task<string> GenerateJwtToken(User user)
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            if (!string.IsNullOrEmpty(updateDto.FirstName))
+            {
+                user.FirstName = updateDto.FirstName;
+                user.Username = GenerateUsername(updateDto.FirstName, user.LastName);
+            }
+
+            if (!string.IsNullOrEmpty(updateDto.LastName))
+            {
+                user.LastName = updateDto.LastName;
+                user.Username = GenerateUsername(user.FirstName, updateDto.LastName);
+            }
+
+            if (!string.IsNullOrEmpty(updateDto.Phone))
+            {
+                user.Phone = updateDto.Phone;
+            }
+
+            if (!string.IsNullOrEmpty(updateDto.Role))
+            {
+                user.Role = updateDto.Role;
+            }
+
+            if (updateDto.IsAdmin.HasValue)
+            {
+                user.IsAdmin = updateDto.IsAdmin.Value;
+            }
+
+            user.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return await GetUserProfile(userId);
+        }
+
+        public async Task<List<UserProfileDto>> GetAllUsers(int adminId)
+        {
+            var admin = await _context.Users.FindAsync(adminId);
+            if (admin == null || !admin.IsAdmin)
+            {
+                throw new Exception("Unauthorized");
+            }
+
+            return await _context.Users
+                .Select(u => new UserProfileDto
+                {
+                    Username = u.Username,
+                    Email = u.Email,
+                    FirstName = u.FirstName,
+                    LastName = u.LastName,
+                    Phone = u.Phone,
+                    Role = u.Role
+                })
+                .ToListAsync();
+        }
+
+        // Add these two methods to your existing service
+        public async Task<UserProfileDto> GetUserById(int requestingUserId, int userId)
+        {
+            var requestingUser = await _context.Users.FindAsync(requestingUserId);
+            if (requestingUser == null)
+            {
+                throw new Exception("Requesting user not found");
+            }
+
+            // Only allow if requesting user is admin or is requesting their own profile
+            if (!requestingUser.IsAdmin && requestingUserId != userId)
+            {
+                throw new Exception("Unauthorized");
+            }
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            return new UserProfileDto
+            {
+                Username = user.Username,
+                Email = user.Email,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Phone = user.Phone,
+                Role = user.Role
+            };
+        }
+
+        public async Task<bool> DeleteUser(int requestingUserId, int userId)
+        {
+            var requestingUser = await _context.Users.FindAsync(requestingUserId);
+            if (requestingUser == null || !requestingUser.IsAdmin)
+            {
+                throw new Exception("Unauthorized - Admin access required");
+            }
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            _context.Users.Remove(user);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        private void CreatePasswordHash(string password, out byte[] passwordHash, out byte[] passwordSalt)
+        {
+            using var hmac = new HMACSHA512();
+            passwordSalt = hmac.Key;
+            passwordHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
+        }
+
+        private bool VerifyPasswordHash(string password, byte[] passwordHash, byte[] passwordSalt)
+        {
+            using var hmac = new HMACSHA512(passwordSalt);
+            var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
+            return computedHash.SequenceEqual(passwordHash);
+        }
+
+        private string CreateToken(User user)
         {
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(ClaimTypes.NameIdentifier, user.Id), // Standard claim for user ID
-                new Claim(ClaimTypes.Name, user.Email), // Use email as the principal name
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Email, user.Email),
-                new Claim("FullName", user.FullName), // Custom claim for full name
-                new Claim("IsAdmin", user.IsAdmin.ToString()) // Custom claim for IsAdmin
+                new Claim(ClaimTypes.Name, user.Username),
+                new Claim(ClaimTypes.Role, user.Role)
             };
 
-            var roles = await _userManager.GetRolesAsync(user);
-            foreach (var role in roles)
-            {
-                claims.Add(new Claim(ClaimTypes.Role, role));
-            }
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
+                _configuration.GetSection("Jwt:Key").Value!));
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-            var expires = DateTime.UtcNow.AddMinutes(Convert.ToDouble(_configuration["Jwt:ExpireMinutes"]));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
 
             var token = new JwtSecurityToken(
-                issuer: _configuration["Jwt:Issuer"],
-                audience: _configuration["Jwt:Audience"],
                 claims: claims,
-                expires: expires,
-                signingCredentials: creds
-            );
+                expires: DateTime.Now.AddDays(1),
+                signingCredentials: creds);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        private string GenerateUsername(string firstName, string lastName)
+        {
+            var baseUsername = $"{firstName.ToLower()}{lastName.ToLower()}";
+            var username = baseUsername;
+            var counter = 1;
+
+            while (_context.Users.Any(u => u.Username == username))
+            {
+                username = $"{baseUsername}{counter}";
+                counter++;
+            }
+
+            return username;
         }
     }
 }

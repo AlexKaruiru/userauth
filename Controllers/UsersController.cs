@@ -8,134 +8,138 @@ namespace userauth.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class UsersController : ControllerBase
+    public class UserController : ControllerBase
     {
         private readonly IUserService _userService;
 
-        public UsersController(IUserService userService)
+        public UserController(IUserService userService)
         {
             _userService = userService;
         }
 
-        // POST: api/Users/register
         [HttpPost("register")]
-        [AllowAnonymous]
-        public async Task<IActionResult> Register([FromBody] UserRegisterDto model)
+        public async Task<IActionResult> Register(RegisterDto registerDto)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                var user = await _userService.Register(registerDto);
+                return Ok(new { message = "Registration successful" });
             }
-
-            var result = await _userService.RegisterUserAsync(model);
-
-            if (result.Succeeded)
+            catch (Exception ex)
             {
-                return Ok(new { Message = "User registered successfully." });
+                return BadRequest(new { message = ex.Message });
             }
-
-            return BadRequest(result.Errors);
         }
 
-        // POST: api/Users/login
         [HttpPost("login")]
-        [AllowAnonymous]
-        public async Task<IActionResult> Login([FromBody] UserLoginDto model)
+        public async Task<IActionResult> Login(LoginDto loginDto)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                var token = await _userService.Login(loginDto);
+                return Ok(new { token });
             }
-
-            var token = await _userService.LoginUserAsync(model);
-
-            if (token == null)
+            catch (Exception ex)
             {
-                return Unauthorized(new { Message = "Invalid login credentials." });
+                return BadRequest(new { message = ex.Message });
             }
-
-            return Ok(new { Token = token });
         }
 
-        // GET: api/Users/profile
+        [Authorize]
         [HttpGet("profile")]
-        [Authorize] // Requires authentication
         public async Task<IActionResult> GetProfile()
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier); // Get user ID from JWT claims
-            if (userId == null)
+            try
             {
-                return Unauthorized(new { Message = "User not found in claims." });
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                var profile = await _userService.GetUserProfile(userId);
+                return Ok(profile);
             }
-
-            var userProfile = await _userService.GetUserProfileAsync(userId);
-            if (userProfile == null)
+            catch (Exception ex)
             {
-                return NotFound(new { Message = "User profile not found." });
+                return BadRequest(new { message = ex.Message });
             }
-
-            return Ok(userProfile);
         }
 
-        // PUT: api/Users/profile
+        [Authorize]
         [HttpPut("profile")]
-        [Authorize] // Requires authentication
-        public async Task<IActionResult> UpdateProfile([FromBody] UserUpdateProfileDto model)
+        public async Task<IActionResult> UpdateProfile(UserUpdateDto updateDto)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                var profile = await _userService.UpdateUserProfile(userId, updateDto);
+                return Ok(profile);
             }
-
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (userId == null)
+            catch (Exception ex)
             {
-                return Unauthorized(new { Message = "User not found in claims." });
+                return BadRequest(new { message = ex.Message });
             }
-
-            var result = await _userService.UpdateUserProfileAsync(userId, model);
-
-            if (result.Succeeded)
-            {
-                return Ok(new { Message = "Profile updated successfully." });
-            }
-
-            return BadRequest(result.Errors);
         }
 
-        // DELETE: api/Users/{id}
-        [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin")] // Only accessible by users with "Admin" role
-        public async Task<IActionResult> DeleteUser(string id)
-        {
-            var result = await _userService.DeleteUserAsync(id);
-            if (result.Succeeded)
-            {
-                return Ok(new { Message = "User deleted successfully." });
-            }
-            return BadRequest(result.Errors);
-        }
-
-        // GET: api/Users (Admin only)
-        [HttpGet]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "admin")]
+        [HttpGet("all")]
         public async Task<IActionResult> GetAllUsers()
         {
-            var users = await _userService.GetAllUsersAsync();
-            return Ok(users);
+            try
+            {
+                var adminId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                var users = await _userService.GetAllUsers(adminId);
+                return Ok(users);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-        // PUT: api/Users/{id}/role (Admin only)
-        [HttpPut("{id}/role")]
-        [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> UpdateUserRole(string id, [FromQuery] bool isAdmin)
+        // Add these two endpoints to your existing controller
+        [Authorize]
+        [HttpGet("{userId}")]
+        public async Task<IActionResult> GetUserById(int userId)
         {
-            var result = await _userService.UpdateUserRoleAsync(id, isAdmin);
-            if (result.Succeeded)
+            try
             {
-                return Ok(new { Message = $"User role updated successfully. IsAdmin: {isAdmin}" });
+                var requestingUserId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                var user = await _userService.GetUserById(requestingUserId, userId);
+                return Ok(user);
             }
-            return BadRequest(result.Errors);
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [Authorize(Roles = "admin")]
+        [HttpDelete("{userId}")]
+        public async Task<IActionResult> DeleteUser(int userId)
+        {
+            try
+            {
+                var requestingUserId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                var result = await _userService.DeleteUser(requestingUserId, userId);
+                return Ok(new { success = result });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [Authorize(Roles = "admin")]
+        [HttpPut("{userId}")]
+        public async Task<IActionResult> AdminUpdateUser(int userId, AdminUserUpdateDto updateDto)
+        {
+            try
+            {
+                var adminId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                var profile = await _userService.AdminUpdateUser(adminId, userId, updateDto);
+                return Ok(profile);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
     }
 }

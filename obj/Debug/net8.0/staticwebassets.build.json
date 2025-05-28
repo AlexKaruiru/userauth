@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "npHWq4ihxQ3+6kGQxtyx1g8bEh55nWJPba9Duux5K6M=",
+  "Source": "userauth",
+  "BasePath": "_content/userauth",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}

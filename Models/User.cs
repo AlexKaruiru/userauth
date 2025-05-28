@@ -1,31 +1,48 @@
-using Microsoft.AspNetCore.Identity;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace userauth.Models
 {
-    public class User : IdentityUser
+    public class User
     {
-        // IdentityUser already provides Id, Username (mapped from Email by default), Email, PhoneNumber.
-        // We'll add custom fields.
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int Id { get; set; }
 
         [Required]
-        [StringLength(100)]
-        public string FirstName { get; set; }
+        [StringLength(50)]
+        public string Username { get; set; } = string.Empty;
 
         [Required]
+        [EmailAddress]
         [StringLength(100)]
-        public string LastName { get; set; }
+        public string Email { get; set; } = string.Empty;
 
-        // Role will be handled by Identity's roles system.
-        // isAdmin can be a custom property or managed through roles. Let's make it a custom property for simplicity.
+        [Required]
+        [StringLength(50)]
+        public string FirstName { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(50)]
+        public string LastName { get; set; } = string.Empty;
+
+        [StringLength(20)]
+        public string? Phone { get; set; }
+
+        [Required]
+        public string Role { get; set; } = "customer";
+
         public bool IsAdmin { get; set; } = false;
 
-        // Timestamps
+        [Required]
+        public byte[] PasswordHash { get; set; } = new byte[32];
+
+        [Required]
+        public byte[] PasswordSalt { get; set; } = new byte[32];
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-        // Custom property to represent the combined username (FirstName + LastName)
         [NotMapped]
         public string FullName => $"{FirstName} {LastName}";
     }
