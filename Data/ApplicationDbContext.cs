@@ -1,8 +1,7 @@
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using userauth.Models;
+using userauth.Models; // Changed from userauth.Models to userauth.Models as per original project name
 
-namespace userauth.Data
+namespace userauth.Data // Changed namespace to userauth.Data
 {
     public class ApplicationDbContext : IdentityDbContext<User>
     {

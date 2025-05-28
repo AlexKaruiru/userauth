@@ -1,7 +1,5 @@
 using userauth.DTOs;
-using userauth.Models;
 using Microsoft.AspNetCore.Identity;
-using System.Threading.Tasks;
 
 namespace userauth.Interfaces
 {

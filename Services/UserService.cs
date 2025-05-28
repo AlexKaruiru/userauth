@@ -1,18 +1,12 @@
 using AutoMapper;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Configuration; // <--- Ensure this is present for _configuration
-using Microsoft.IdentityModel.Tokens;
-using System;
-using System.Collections.Generic;
-using System.IdentityModel.Tokens.Jwt; // <--- Add this line
 using System.Security.Claims;
 using System.Text;
-using userauth.DTOs; // Changed namespace from 'userauth' to 'userauth'
-using userauth.Interfaces; // Changed namespace from 'userauth' to 'userauth'
-using userauth.Models; // Changed namespace from 'userauth' to 'userauth'
-using System.Linq; // Added for .ToList() on UserManager.Users
+using userauth.DTOs; 
+using userauth.Interfaces; 
+using userauth.Models; 
 
-namespace userauth.Services // Changed namespace from 'userauth' to 'userauth'
+namespace userauth.Services 
 {
     public class UserService : IUserService
     {
